@@ -2,6 +2,8 @@ package sigo
 
 import "fmt"
 
+//go:generate goyacc sigo.y
+
 type Node interface{}
 
 type LiteralIntNode struct {
