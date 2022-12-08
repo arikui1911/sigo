@@ -69,8 +69,6 @@ func lex(l *Lexer) {
 			lexNumber(l, c)
 		case c == '_' || unicode.IsLetter(c):
 			lexSymbol(l, c)
-		case c == ')':
-			lexPostRp(l)
 		default:
 			lexOperator(l, c)
 		}
@@ -85,7 +83,6 @@ func skipComment(l *Lexer) {
 			break
 		}
 		if c == '\n' {
-			l.ungetc(c)
 			break
 		}
 	}
@@ -107,7 +104,7 @@ func lexString(l *Lexer) {
 		switch c {
 		case '"':
 			l.ch <- lexResult{tok: Token{TOKEN_LIT_STRING, string(buf), lineno, column}}
-			return
+            return
 		case '\\':
 			buf = lexEscapeSequence(l, buf)
 		default:
@@ -239,44 +236,6 @@ func lexSymbol(l *Lexer, fc rune) {
 	l.ch <- lexResult{tok: Token{tag, val, lineno, column}}
 }
 
-func lexPostRp(l *Lexer) {
-	lineno := l.lineno
-	column := l.column
-	for {
-		c, err := l.getc()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return
-		}
-		if c == '-' {
-			c, err = l.getc()
-			if err == io.EOF {
-				l.ch <- lexResult{tok: Token{TOKEN_RP, ")", lineno, column}}
-				lexOperator(l, '-')
-				return
-			}
-			if err != nil {
-				return
-			}
-			if c != '>' {
-				l.ungetc(c)
-				l.ch <- lexResult{tok: Token{TOKEN_RP, ")", lineno, column}}
-				lexOperator(l, '-')
-				return
-			}
-			l.ch <- lexResult{tok: Token{TOKEN_RP_AND_ARROW, ")->", lineno, column}}
-			return
-		}
-		if c == '\n' || !unicode.IsSpace(c) {
-			l.ungetc(c)
-			break
-		}
-	}
-	l.ch <- lexResult{tok: Token{TOKEN_RP, ")", lineno, column}}
-}
-
 var operators = map[string]int{
 	"(":  TOKEN_LP,
 	")":  TOKEN_RP,
@@ -308,7 +267,7 @@ var operators = map[string]int{
 	"%=": TOKEN_MOD_A,
 	"&&": TOKEN_DAND,
 	"||": TOKEN_DOR,
-	"->": TOKEN_ARROW,
+	"->":   TOKEN_ARROW,
 }
 
 func lexOperator(l *Lexer, fc rune) {
@@ -398,7 +357,6 @@ func (l *Lexer) getc() (c rune, err error) {
 func (l *Lexer) ungetc(c rune) {
 	l.hasSavedRune = true
 	l.savedRune = c
-	l.column--
 	if c == '\n' {
 		l.column = l.lastNewlineColumn
 	}
