@@ -32,6 +32,8 @@ type Lexer struct {
 	isEOF             bool
 	savedRune         rune
 	hasSavedRune      bool
+	lastRune          rune
+	lastToken         Token
 }
 
 func NewLexer(src io.Reader, fileName string) *Lexer {
@@ -39,7 +41,9 @@ func NewLexer(src io.Reader, fileName string) *Lexer {
 		src:      bufio.NewReader(src),
 		ch:       make(chan lexResult, 1),
 		fileName: fileName,
-		lineno:   1,
+		lineno:   0,
+		column:   1,
+		lastRune: '\n',
 	}
 	go lex(l)
 	return l
@@ -57,6 +61,10 @@ func lex(l *Lexer) {
 			break
 		}
 		switch {
+		case c == '\n':
+			if l.isNewlineRequired() {
+				l.emit(TOKEN_NL, "\n", l.lineno, l.column)
+			}
 		case unicode.IsSpace(c):
 			// do nothing
 		case c == '#':
@@ -73,7 +81,15 @@ func lex(l *Lexer) {
 			lexOperator(l, c)
 		}
 	}
-	l.ch <- lexResult{tok: Token{TOKEN_EOF, nil, l.lineno, l.column}}
+	l.emit(TOKEN_EOF, nil, l.lineno, l.column)
+}
+
+func (l *Lexer) isNewlineRequired() bool {
+	switch l.lastToken.Tag {
+	case TOKEN_RP, TOKEN_RB, TOKEN_RC, TOKEN_LIT_INT, TOKEN_LIT_FLOAT, TOKEN_LIT_STRING, TOKEN_SYMBOL:
+		return true
+	}
+	return false
 }
 
 func skipComment(l *Lexer) {
@@ -95,7 +111,7 @@ func lexString(l *Lexer) {
 	for {
 		c, err := l.getc()
 		if err == io.EOF {
-			l.ch <- lexResult{err: l.syntaxError(lineno, column, "unterminated string literal")}
+			l.emitError(l.syntaxError(lineno, column, "unterminated string literal"))
 			return
 		}
 		if err != nil {
@@ -103,8 +119,8 @@ func lexString(l *Lexer) {
 		}
 		switch c {
 		case '"':
-			l.ch <- lexResult{tok: Token{TOKEN_LIT_STRING, string(buf), lineno, column}}
-            return
+			l.emit(TOKEN_LIT_STRING, string(buf), lineno, column)
+			return
 		case '\\':
 			buf = lexEscapeSequence(l, buf)
 		default:
@@ -135,7 +151,7 @@ func lexPostZero(l *Lexer) {
 	column := l.column
 	c, err := l.getc()
 	if err == io.EOF {
-		l.ch <- lexResult{tok: Token{TOKEN_LIT_INT, 0, lineno, column}}
+		l.emit(TOKEN_LIT_INT, 0, lineno, column)
 		return
 	}
 	if err != nil {
@@ -146,7 +162,7 @@ func lexPostZero(l *Lexer) {
 		return
 	}
 	l.ungetc(c)
-	l.ch <- lexResult{tok: Token{TOKEN_LIT_INT, 0, lineno, column}}
+	l.emit(TOKEN_LIT_INT, 0, lineno, column)
 }
 
 func lexNumber(l *Lexer, fc rune) {
@@ -173,10 +189,10 @@ func lexNumber(l *Lexer, fc rune) {
 	}
 	i64, err := strconv.ParseInt(string(buf), 10, 64)
 	if err != nil {
-		l.ch <- lexResult{err: l.wrapError(lineno, column, err)}
+		l.emitError(l.wrapError(lineno, column, err))
 		return
 	}
-	l.ch <- lexResult{tok: Token{TOKEN_LIT_INT, int(i64), lineno, column}}
+	l.emit(TOKEN_LIT_INT, int(i64), lineno, column)
 }
 
 func lexFloat(l *Lexer, lineno int, column int, buf []rune) {
@@ -197,10 +213,10 @@ func lexFloat(l *Lexer, lineno int, column int, buf []rune) {
 	}
 	f64, err := strconv.ParseFloat(string(buf), 64)
 	if err != nil {
-		l.ch <- lexResult{err: l.wrapError(lineno, column, err)}
+		l.emitError(l.wrapError(lineno, column, err))
 		return
 	}
-	l.ch <- lexResult{tok: Token{TOKEN_LIT_FLOAT, f64, lineno, column}}
+	l.emit(TOKEN_LIT_FLOAT, f64, lineno, column)
 }
 
 var keywords = map[string]int{
@@ -233,7 +249,7 @@ func lexSymbol(l *Lexer, fc rune) {
 	if v, ok := keywords[val]; ok {
 		tag = v
 	}
-	l.ch <- lexResult{tok: Token{tag, val, lineno, column}}
+	l.emit(tag, val, lineno, column)
 }
 
 var operators = map[string]int{
@@ -267,7 +283,7 @@ var operators = map[string]int{
 	"%=": TOKEN_MOD_A,
 	"&&": TOKEN_DAND,
 	"||": TOKEN_DOR,
-	"->":   TOKEN_ARROW,
+	"->": TOKEN_ARROW,
 }
 
 func lexOperator(l *Lexer, fc rune) {
@@ -292,10 +308,24 @@ func lexOperator(l *Lexer, fc rune) {
 	k := string(buf)
 	v, ok := operators[k]
 	if !ok {
-		l.ch <- lexResult{err: l.syntaxError(lineno, column, "invalid character - '%c'", buf[0])}
+		l.emitError(l.syntaxError(lineno, column, "invalid character - '%c'", buf[0]))
 		return
 	}
-	l.ch <- lexResult{tok: Token{v, k, lineno, column}}
+
+	l.emit(v, k, lineno, column)
+}
+
+/*
+ * Emitter
+ */
+
+func (l *Lexer) emit(tag int, val any, lineno int, column int) {
+	l.lastToken = Token{tag, val, lineno, column}
+	l.ch <- lexResult{tok: l.lastToken}
+}
+
+func (l *Lexer) emitError(err error) {
+	l.ch <- lexResult{err: err}
 }
 
 /*
@@ -338,26 +368,39 @@ func (l *Lexer) getc() (c rune, err error) {
 		c, _, err = l.src.ReadRune()
 	}
 	if err == io.EOF {
+		if !l.isEOF {
+			l.column++
+			if l.lastRune == '\n' {
+				l.column = 1
+				l.lineno++
+			}
+		}
 		l.isEOF = true
 		return
 	}
 	if err != nil {
-		l.ch <- lexResult{err: l.wrapError(l.lineno, l.column, err)}
+		l.emitError(l.wrapError(l.lineno, l.column, err))
 		return
 	}
 	l.column++
+	if l.lastRune == '\n' {
+		l.column = 1
+		l.lineno++
+	}
 	if c == '\n' {
 		l.lastNewlineColumn = l.column
-		l.lineno++
-		l.column = 0
 	}
+	l.lastRune = c
 	return
 }
 
 func (l *Lexer) ungetc(c rune) {
 	l.hasSavedRune = true
 	l.savedRune = c
-	if c == '\n' {
+	l.lastRune = 0
+	l.column--
+	if l.column == 0 {
+		l.lineno--
 		l.column = l.lastNewlineColumn
 	}
 }
