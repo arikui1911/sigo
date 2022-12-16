@@ -32,7 +32,7 @@ type Lexer struct {
 	isEOF             bool
 	savedRune         rune
 	hasSavedRune      bool
-	lastRune          rune
+	onEOL             bool
 	lastToken         Token
 }
 
@@ -43,7 +43,7 @@ func NewLexer(src io.Reader, fileName string) *Lexer {
 		fileName: fileName,
 		lineno:   0,
 		column:   1,
-		lastRune: '\n',
+		onEOL:    true,
 	}
 	go lex(l)
 	return l
@@ -367,37 +367,34 @@ func (l *Lexer) getc() (c rune, err error) {
 	} else {
 		c, _, err = l.src.ReadRune()
 	}
-	if err == io.EOF {
-		if !l.isEOF {
-			l.column++
-			if l.lastRune == '\n' {
-				l.column = 1
-				l.lineno++
-			}
+	switch {
+	case err == io.EOF:
+		if l.isEOF {
+			return
 		}
 		l.isEOF = true
-		return
-	}
-	if err != nil {
+		c = 0
+	case err != nil:
 		l.emitError(l.wrapError(l.lineno, l.column, err))
 		return
 	}
 	l.column++
-	if l.lastRune == '\n' {
+	if l.onEOL {
+		l.onEOL = false
 		l.column = 1
 		l.lineno++
 	}
 	if c == '\n' {
 		l.lastNewlineColumn = l.column
+		l.onEOL = true
 	}
-	l.lastRune = c
 	return
 }
 
 func (l *Lexer) ungetc(c rune) {
 	l.hasSavedRune = true
 	l.savedRune = c
-	l.lastRune = 0
+	l.onEOL = false
 	l.column--
 	if l.column == 0 {
 		l.lineno--
