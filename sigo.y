@@ -8,7 +8,10 @@ package sigo
     node Node
 }
 
-%type<node> program primary
+%type<node> program block compstmt stmts stmt expr primary
+
+
+%token<token> TOKEN_MIN
 
 %token<token> TOKEN_LIT_INT TOKEN_LIT_FLOAT TOKEN_LIT_STRING TOKEN_SYMBOL
 %token<token> TOKEN_KW_IF TOKEN_KW_ELSIF TOKEN_KW_ELSE TOKEN_KW_WHILE
@@ -20,15 +23,68 @@ package sigo
               TOKEN_DOR TOKEN_ARROW
 %token<token> TOKEN_RP_AND_ARROW TOKEN_NL
 
+%token<token> TOKEN_MAX
+
 
 
 %%
 
 program
-: primary
+:
+{
+    $$ = nil
+}
+| compstmt
 {
     $$ = finishAST(yylex, $1)
 }
+;
+
+compstmt
+: stmts terms_opt
+;
+
+block
+: TOKEN_LC TOKEN_RC
+{
+    $$ = nil
+}
+| TOKEN_LC compstmt TOKEN_RC
+{
+    $$ = finishBlock($2)
+}
+;
+
+stmts
+: stmt
+| stmts terms stmt
+{
+    $$ = appendStatement($1, $3)
+}
+;
+
+terms_opt
+:
+| terms
+;
+
+terms
+: term
+| terms term
+;
+
+term
+: TOKEN_NL
+| TOKEN_SEMICOLON
+;
+
+stmt
+: expr
+| block
+;
+
+expr
+: primary
 ;
 
 primary
