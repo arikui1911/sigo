@@ -92,7 +92,11 @@ expr
 ;
 
 primary
-: TOKEN_LIT_INT
+: TOKEN_LP expr TOKEN_RP
+{
+    $$ = $2
+}
+| TOKEN_LIT_INT
 {
     $$ = &LiteralIntNode{$1.Lineno, $1.Column, $1.Value.(int)}
 }

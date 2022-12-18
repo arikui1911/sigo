@@ -25,6 +25,11 @@ func TestParser(t *testing.T) {
 			&sigo.BlockNode{[]sigo.Node{&sigo.LiteralIntNode{1, 1, 123}, &sigo.LiteralIntNode{2, 1, 456}}},
 		},
 		{
+			"parened int literal expr stmt",
+			"(123)\n",
+			&sigo.LiteralIntNode{1, 2, 123},
+		},
+		{
 			"empty source",
 			"\n",
 			nil,
