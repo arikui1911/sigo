@@ -81,6 +81,10 @@ term
 stmt
 : expr
 | block
+| TOKEN_KW_WHILE expr block
+{
+    $$ = &WhileNode{$1.Lineno, $1.Column, $2, $3}
+}
 ;
 
 expr

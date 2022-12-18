@@ -25,6 +25,13 @@ func finishBlock(node Node) *BlockNode {
 	return &BlockNode{Statements: []Node{node}}
 }
 
+type WhileNode struct {
+	Lineno int
+	Column int
+	Cond   Node
+	Body   Node
+}
+
 type LiteralIntNode struct {
 	Lineno int
 	Column int

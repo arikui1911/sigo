@@ -51,7 +51,7 @@ func TestParser(t *testing.T) {
   123
   456
 }
-`,
+			`,
 			&sigo.BlockNode{[]sigo.Node{&sigo.LiteralIntNode{3, 3, 123}, &sigo.LiteralIntNode{4, 3, 456}}},
 		},
 		{
@@ -59,8 +59,17 @@ func TestParser(t *testing.T) {
 			`
 { 123
   456 }
-`,
+			`,
 			&sigo.BlockNode{[]sigo.Node{&sigo.LiteralIntNode{2, 3, 123}, &sigo.LiteralIntNode{3, 3, 456}}},
+		},
+		{
+			"while stmt",
+			`
+while 100 {
+  200
+}
+			`,
+			&sigo.WhileNode{2, 1, &sigo.LiteralIntNode{2, 7, 100}, &sigo.BlockNode{[]sigo.Node{&sigo.LiteralIntNode{3, 3, 200}}}},
 		},
 	}
 
